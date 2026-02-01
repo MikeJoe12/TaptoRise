@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Tap-to-Rise | Player</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root{
+      /* Brighter theme */
+      --bg1:#0B1536; --bg2:#1D3A73;
+      --panel: rgba(255,255,255,.10);
+      --stroke: rgba(255,255,255,.18);
+      --text: rgba(255,255,255,.94);
+      --muted: rgba(255,255,255,.74);
+      --shadow: 0 18px 60px rgba(0,0,0,.45);
+      --radius: 18px;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: var(--sans); color: var(--text);
+      min-height: 100vh;
+      background:
+        radial-gradient(900px 520px at 12% 0%, rgba(99,102,241,.28), transparent 60%),
+        radial-gradient(900px 520px at 88% 10%, rgba(236,72,153,.22), transparent 60%),
+        radial-gradient(700px 420px at 50% 100%, rgba(34,197,94,.12), transparent 55%),
+        linear-gradient(180deg, var(--bg1), var(--bg2));
+      overflow:hidden;
+    }
+    .wrap{
+      min-height:100vh;
+      display:grid;
+      grid-template-rows: auto 1fr;
+      gap:14px;
+      padding: 16px;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    }
+    header{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+    }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .logo{
+      width:40px;height:40px;border-radius:14px;
+      background: linear-gradient(135deg, rgba(99,102,241,.95), rgba(236,72,153,.75));
+      box-shadow: var(--shadow);
+      display:grid; place-items:center;
+      border: 1px solid rgba(255,255,255,.18);
+    }
+    .logo span{ font-size:20px; }
+    .title b{ font-size:16px; display:block; line-height:1.1 }
+    .title small{ color: var(--muted); }
+
+    .panel{
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      overflow:hidden;
+      min-height:0;
+    }
+    .join{
+      padding:14px;
+      display:grid;
+      gap:10px;
+    }
+    label{
+      font-size: 12px;
+      color: rgba(255,255,255,.86);
+      letter-spacing:.06em;
+      text-transform: uppercase;
+    }
+    input{
+      width:100%;
+      padding: 14px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.08);
+      color: var(--text);
+      outline: none;
+      font-size: 16px;
+    }
+    input::placeholder{ color: rgba(255,255,255,.45); }
+
+    .btn{
+      cursor:pointer;
+      user-select:none;
+      padding: 14px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.22);
+      background: linear-gradient(135deg, rgba(99,102,241,.98), rgba(236,72,153,.72));
+      color: var(--text);
+      font-weight: 950;
+      box-shadow: 0 12px 34px rgba(0,0,0,.25);
+      font-size: 16px;
+    }
+    .btn:disabled{ opacity:.45; cursor:not-allowed; }
+
+    .status{
+      padding: 12px 14px;
+      border-top: 1px solid rgba(255,255,255,.14);
+      color: rgba(255,255,255,.90);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      font-size: 13px;
+      background: rgba(255,255,255,.06);
+    }
+
+    /* Game controller */
+    .game{
+      display:none;
+      height:100%;
+      min-height:0;
+    }
+    .game.show{ display:grid; grid-template-rows: auto 1fr auto; gap: 12px; padding: 14px; }
+
+    .top{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+    }
+    .meter{
+      height: 12px;
+      width: 100%;
+      border-radius: 999px;
+      background: rgba(255,255,255,.10);
+      border: 1px solid rgba(255,255,255,.16);
+      overflow:hidden;
+    }
+    .fill{
+      height:100%;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(110,231,183,.95), rgba(99,102,241,.95), rgba(236,72,153,.88));
+      transition: width 80ms linear;
+    }
+
+    .tapArea{
+      border-radius: 22px;
+      border: 1px solid rgba(255,255,255,.16);
+      background:
+        radial-gradient(520px 320px at 50% 30%, rgba(255,255,255,.14), rgba(0,0,0,.12)),
+        linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.06));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 16px 50px rgba(0,0,0,.30);
+      display:grid;
+      place-items:center;
+      position: relative;
+      overflow:hidden;
+      touch-action: manipulation;
+      min-height: min(520px, 60vh);
+    }
+    .tapBtn{
+      width: min(340px, 85vw);
+      height: min(340px, 55vh);
+      border-radius: 28px;
+      border: 1px solid rgba(255,255,255,.20);
+      background: linear-gradient(135deg, rgba(99,102,241,.68), rgba(236,72,153,.48));
+      box-shadow: 0 22px 70px rgba(0,0,0,.35);
+      display:grid;
+      place-items:center;
+      text-align:center;
+      cursor:pointer;
+      user-select:none;
+      transition: transform .06s ease, filter .06s ease;
+      position: relative;
+    }
+    .tapBtn:active{ transform: scale(.985); filter: brightness(1.06); }
+    .tapBtn.disabled{ opacity:.55; cursor:not-allowed; filter:saturate(.7); }
+    .tapBtn .big{ font-size: 48px; font-weight: 1000; margin-bottom: 6px; }
+    .tapBtn .sub{
+      color: rgba(255,255,255,.86);
+      font-weight: 900;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+
+    .foot{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      color: rgba(255,255,255,.82);
+      font-size: 13px;
+      font-family: var(--mono);
+    }
+
+    .toast{
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 18px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.32);
+      border: 1px solid rgba(255,255,255,.16);
+      color: rgba(255,255,255,.92);
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      display:none;
+      z-index: 10;
+      backdrop-filter: blur(10px);
+      max-width: 92vw;
+      text-align:center;
+      font-size: 13px;
+    }
+    .toast.show{ display:block; }
+
+    /* --- NEW ANIMATIONS --- */
+    .ripple {
+      position: absolute; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.4);
+      transform: scale(0); animation: rippleAnim 0.6s linear; pointer-events: none;
+    }
+    @keyframes rippleAnim { to { transform: scale(4); opacity: 0; } }
+
+    .plus-one {
+      position: absolute; font-weight: 900; font-size: 32px; color: #fff;
+      pointer-events: none; animation: floatUp 0.8s ease-out forwards;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 50;
+    }
+    @keyframes floatUp {
+      0% { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-100px) scale(1.5); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo"><span>🎮</span></div>
+        <div class="title">
+          <b>Tap-to-Rise</b>
+          <small>Player Controller</small>
+        </div>
+      </div>
+    </header>
+
+    <div class="panel" id="joinPanel">
+      <div class="join">
+        <div>
+          <label>Your name</label>
+          <input id="name" placeholder="e.g., Mishail" autocomplete="nickname" maxlength="16" />
+        </div>
+        <button class="btn" id="btnJoin">Join</button>
+      </div>
+      <div class="status">
+        <span>Status</span>
+        <b id="statusText">Connecting…</b>
+      </div>
+    </div>
+
+    <div class="panel game" id="gamePanel">
+      <div class="top">
+        <div style="min-width:120px">
+          <div style="font-weight:1000;" id="playerName">Player</div>
+          <div style="color:rgba(255,255,255,.76); font-size:12px;" id="gameState">Waiting…</div>
+        </div>
+        <div style="flex:1">
+          <div class="meter"><div class="fill" id="fill"></div></div>
+          <div style="display:flex; justify-content:space-between; margin-top:6px; color:rgba(255,255,255,.78); font-size:12px;">
+            <span>Progress</span><span id="pct">0%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tapArea">
+        <div class="tapBtn disabled" id="tapBtn">
+          <div>
+            <div class="big" id="tapBig">WAIT</div>
+            <div class="sub" id="tapSub">For the host to start</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <span id="socketIdShort">----</span>
+        <span>tap fast</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  const socket = io();
+
+  const joinPanel = document.getElementById("joinPanel");
+  const gamePanel = document.getElementById("gamePanel");
+  const btnJoin = document.getElementById("btnJoin");
+  const statusText = document.getElementById("statusText");
+  const nameEl = document.getElementById("name");
+
+  const playerNameEl = document.getElementById("playerName");
+  const gameStateEl = document.getElementById("gameState");
+  const tapBtn = document.getElementById("tapBtn");
+  const tapBig = document.getElementById("tapBig");
+  const tapSub = document.getElementById("tapSub");
+  const fill = document.getElementById("fill");
+  const pct = document.getElementById("pct");
+  const toast = document.getElementById("toast");
+  const socketIdShort = document.getElementById("socketIdShort");
+
+  let joined = false;
+  let canTap = false;
+  let myProgress = 0;
+  let countdownInterval = null;
+
+  let audioArmed = false;
+  let audioCtx = null;
+  let masterGain = null;
+  let lastLocalTapAt = 0;
+
+  function armAudioOnce(){
+    if (audioArmed) return;
+    audioArmed = true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.22;
+    masterGain.connect(audioCtx.destination);
+  }
+
+  function clickBeep(){
+    if (!audioCtx || !masterGain) return;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 1400;
+    g.gain.value = 0.0001;
+    osc.connect(g); g.connect(masterGain);
+    const t = audioCtx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+    osc.start(t);
+    osc.stop(t + 0.05);
+  }
+
+  function setStatus(msg, tone="") {
+    statusText.textContent = msg;
+    statusText.style.color =
+      tone === "good" ? "rgba(110,231,183,.95)" :
+      tone === "warn" ? "rgba(251,191,36,.95)" :
+      tone === "bad"  ? "rgba(248,113,113,.95)" :
+      "rgba(255,255,255,.92)";
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 1600);
+  }
+
+  function setTapEnabled(enabled, labelBig, labelSub) {
+    canTap = enabled;
+    tapBtn.classList.toggle("disabled", !enabled);
+    tapBig.textContent = labelBig;
+    tapSub.textContent = labelSub;
+  }
+
+  function setProgress(p) {
+    myProgress = Math.max(0, Math.min(100, p));
+    fill.style.width = myProgress + "%";
+    pct.textContent = Math.round(myProgress) + "%";
+  }
+
+  function showGameUI(name) {
+    joinPanel.style.display = "none";
+    gamePanel.classList.add("show");
+    playerNameEl.textContent = name || "Player";
+  }
+
+  const storedName = localStorage.getItem("taprise:name");
+  let playerKey = localStorage.getItem("taprise:key");
+  if (storedName) nameEl.value = storedName;
+
+  function doJoin() {
+    armAudioOnce();
+    const name = (nameEl.value || "").trim();
+    if (!name) return showToast("Enter your name");
+    localStorage.setItem("taprise:name", name);
+    socket.emit("player:join", { name, playerKey });
+  }
+
+  btnJoin.addEventListener("click", doJoin);
+
+  socket.on("connect", () => {
+    setStatus("Connected", "good");
+    socketIdShort.textContent = (socket.id || "----").slice(0, 6);
+    if (storedName && playerKey) { socket.emit("player:join", { name: storedName, playerKey }); }
+  });
+
+  function handleTap(e) {
+    if (!joined || !canTap) return;
+
+    const now = Date.now();
+    if (now - lastLocalTapAt < 50) return;
+    lastLocalTapAt = now;
+
+    armAudioOnce();
+    clickBeep();
+    socket.emit("player:tap");
+
+    // Button scale effect
+    tapBtn.style.transform = "scale(0.985)";
+    setTimeout(() => tapBtn.style.transform = "", 40);
+
+    // --- RIPPLE & +1 ANIMATION ---
+    let x, y;
+    if (e && e.touches && e.touches.length > 0) {
+      x = e.touches[0].clientX;
+      y = e.touches[0].clientY;
+    } else if (e) {
+      x = e.clientX;
+      y = e.clientY;
+    } else {
+      const rect = tapBtn.getBoundingClientRect();
+      x = rect.left + rect.width / 2;
+      y = rect.top + rect.height / 2;
+    }
+
+    const r = document.createElement("div");
+    r.className = "ripple";
+    r.style.width = "100px"; r.style.height = "100px";
+    r.style.left = (x - 50) + "px";
+    r.style.top = (y - 50) + "px";
+    document.body.appendChild(r);
+    setTimeout(() => r.remove(), 600);
+
+    const p = document.createElement("div");
+    p.className = "plus-one";
+    p.textContent = "+1";
+    p.style.left = (x - 15) + "px";
+    p.style.top = (y - 30) + "px";
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 800);
+  }
+
+  tapBtn.addEventListener("click", handleTap);
+  tapBtn.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    handleTap(e);
+  }, { passive: false });
+
+  socket.on("disconnect", () => {
+    setStatus("Disconnected", "bad");
+    setTapEnabled(false, "WAIT", "Reconnecting…");
+  });
+
+  socket.on("player:joinResult", ({ ok, reason, name, playerKey: pk }) => {
+    if (!ok) {
+      setStatus(reason || "Join failed", "bad");
+      showToast(reason || "Join failed");
+      return;
+    }
+    if (pk) { playerKey = pk; localStorage.setItem("taprise:key", pk); }
+    joined = true;
+    setStatus("Joined", "good");
+    showGameUI(name);
+    setProgress(0);
+    gameStateEl.textContent = "Waiting for host…";
+    setTapEnabled(false, "WAIT", "For the host to start");
+  });
+
+  socket.on("game:update", (state) => {
+    if (joined) {
+      const me = (state.players || []).find(p => p.id === socket.id);
+      if (me && typeof me.progress === "number") setProgress(me.progress);
+    }
+    const st = state.state;
+    if (st === "lobby") {
+      gameStateEl.textContent = "Lobby";
+      setTapEnabled(false, "WAIT", "Host is setting up");
+    } else if (st === "countdown") {
+      gameStateEl.textContent = "Countdown";
+      setTapEnabled(false, "READY", "Starting soon…");
+    } else if (st === "running") {
+      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+      gameStateEl.textContent = "RUNNING";
+      setTapEnabled(true, "TAP!", "Tap fast to rise");
+    } else if (st === "ended") {
+      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+      gameStateEl.textContent = "ENDED";
+      setTapEnabled(false, "DONE", "Wait for next round");
+    }
+  });
+
+  socket.on("game:countdown", ({ seconds }) => {
+    if (countdownInterval) clearInterval(countdownInterval);
+    let s = seconds;
+    gameStateEl.textContent = "Countdown";
+    setTapEnabled(false, String(s), "Get ready…");
+    countdownInterval = setInterval(() => {
+      s--;
+      if (s > 0) {
+        setTapEnabled(false, String(s), "Get ready…");
+      } else {
+        setTapEnabled(false, "GO!", "Starting…");
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    }, 1000);
+  });
+
+  socket.on("game:started", () => {
+    if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    gameStateEl.textContent = "RUNNING";
+    setTapEnabled(true, "TAP!", "Tap fast to rise");
+    showToast("GO!");
+  });
+
+  socket.on("game:progress", ({ id, progress }) => {
+    if (id === socket.id) setProgress(progress);
+  });
+
+  socket.on("game:ended", ({ winner }) => {
+    if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    gameStateEl.textContent = "ENDED";
+    setTapEnabled(false, "DONE", "Wait for next round");
+    if (winner) showToast(`Winner: ${winner.name}`);
+  });
+
+  socket.on("game:reset", () => {
+    if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    setProgress(0);
+    gameStateEl.textContent = "Lobby";
+    setTapEnabled(false, "WAIT", "Host is setting up");
+    showToast("New round ready");
+  });
+
+  socket.on("host:left", () => {
+    setTapEnabled(false, "WAIT", "Host left");
+    showToast("Host left");
+  });
+</script>
+</body>
+</html>

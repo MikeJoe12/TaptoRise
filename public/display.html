@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tap-to-Rise | Display</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root{
+      /* Brighter, lighter theme */
+      --bg1:#0B1536; --bg2:#1D3A73;
+      --panel: rgba(255,255,255,.10);
+      --text: rgba(255,255,255,.94);
+      --muted: rgba(255,255,255,.74);
+      --stroke: rgba(255,255,255,.18);
+      --shadow: 0 18px 60px rgba(0,0,0,.45);
+      --radius: 18px; --radius2: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: var(--sans); color: var(--text);
+      min-height: 100vh;
+      background:
+        radial-gradient(1200px 650px at 12% 0%, rgba(99,102,241,.28), transparent 60%),
+        radial-gradient(1200px 650px at 88% 10%, rgba(236,72,153,.22), transparent 60%),
+        radial-gradient(900px 520px at 50% 100%, rgba(34,197,94,.12), transparent 55%),
+        linear-gradient(180deg, var(--bg1), var(--bg2));
+      overflow:hidden;
+    }
+    .wrap{
+      height:100vh;
+      display:grid;
+      grid-template-rows: auto 1fr;
+      gap:14px;
+      padding: 18px;
+    }
+    header{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+    }
+    .brand{ display:flex; align-items:center; gap:12px; }
+    .logo{
+      width:44px;height:44px;border-radius:14px;
+      background: linear-gradient(135deg, rgba(99,102,241,.95), rgba(236,72,153,.75));
+      box-shadow: var(--shadow);
+      display:grid; place-items:center;
+      border: 1px solid rgba(255,255,255,.18);
+    }
+    .logo span{ font-size:22px; }
+    .title{ display:flex; flex-direction:column; line-height:1.1; }
+    .title b{ font-size:18px; letter-spacing:.2px; }
+    .title small{ color: var(--muted); }
+
+    .topActions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .btn{
+      cursor:pointer; user-select:none;
+      padding:10px 14px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.08));
+      border: 1px solid rgba(255,255,255,.20);
+      color: var(--text);
+      box-shadow: 0 10px 28px rgba(0,0,0,.22);
+      transition: transform .08s ease, filter .08s ease;
+      font-weight: 650;
+    }
+    .btn:hover{ filter: brightness(1.06); }
+    .btn:active{ transform: translateY(1px) scale(.99); }
+    .btn.primary{
+      background: linear-gradient(135deg, rgba(99,102,241,.98), rgba(236,72,153,.72));
+      border-color: rgba(255,255,255,.24);
+    }
+    .btn.danger{
+      background: linear-gradient(135deg, rgba(248,113,113,.92), rgba(251,191,36,.50));
+      border-color: rgba(255,255,255,.22);
+    }
+    .btn:disabled{ opacity:.45; cursor:not-allowed; filter:none; transform:none; }
+
+    .chip{
+      padding:8px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.10);
+      border: 1px solid rgba(255,255,255,.16);
+      font-size: 12px;
+      color: rgba(255,255,255,.90);
+      backdrop-filter: blur(8px);
+    }
+
+    main{
+      display:grid;
+      grid-template-columns: 300px 1fr;
+      gap:14px;
+      height: calc(100vh - 18px - 44px - 14px);
+      min-height: 0;
+    }
+    .panel{
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      min-height:0;
+      overflow:hidden;
+    }
+    .left{
+      padding:14px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .section{
+      padding:12px;
+      border-radius: var(--radius2);
+      border: 1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.08);
+    }
+    .section h3{
+      margin:0 0 8px 0;
+      font-size: 13px;
+      letter-spacing:.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.86);
+    }
+    .row{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+    .seg{
+      display:flex;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 12px;
+      overflow:hidden;
+      background: rgba(255,255,255,.06);
+    }
+    .seg button{
+      border:0;
+      background: transparent;
+      color: var(--text);
+      padding:10px 12px;
+      cursor:pointer;
+      font-weight:750;
+      min-width: 54px;
+    }
+    .seg button.active{ background: rgba(99,102,241,.40); }
+
+    .pSelect{
+      padding:10px 12px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font-weight: 800;
+      min-width: 86px;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
+    }
+    .pSelect option{ color: #0B1536; }
+
+    .playersList{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      max-height: 280px;
+      overflow:auto;
+      padding-right: 4px;
+    }
+    .pItem{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:10px 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.08);
+    }
+    .pLeft{ display:flex; align-items:center; gap:10px; }
+    .badge{
+      width:28px;height:28px;border-radius:10px;
+      display:grid; place-items:center;
+      border:1px solid rgba(255,255,255,.18);
+      background: rgba(0,0,0,.12);
+      font-weight:900;
+    }
+    .pName{ font-weight:800; }
+    .pMeta{ color: var(--muted); font-size: 12px; font-family: var(--mono); }
+
+    .hint{ color: var(--muted); line-height:1.35; font-size: 13px; }
+
+    .race{ position:relative; display:flex; flex-direction:column; min-height:0; }
+    .raceTop{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.14);
+      gap: 12px;
+    }
+    .timerBar{
+      position:relative;
+      width: 260px;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.10);
+      border: 1px solid rgba(255,255,255,.16);
+      overflow:hidden;
+    }
+    .timerFill{
+      height:100%;
+      width:0%;
+      background: linear-gradient(90deg, rgba(110,231,183,.95), rgba(99,102,241,.95), rgba(236,72,153,.88));
+    }
+    .lanes{
+      flex:1;
+      min-height:0;
+      display:grid;
+      gap:10px;
+      padding:14px;
+    }
+    .lane{
+      position:relative;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.06));
+      overflow:hidden;
+      min-height: 0;
+    }
+    .laneHeader{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+    }
+    .laneHeader .who{ display:flex; align-items:center; gap:10px; font-weight:900; }
+    .dot{
+      width:10px;height:10px;border-radius:99px;
+      background: rgba(255,255,255,.70);
+      box-shadow: 0 0 0 6px rgba(255,255,255,.10);
+    }
+    .laneHeader .pct{
+      font-family: var(--mono);
+      letter-spacing:.08em;
+      font-weight:900;
+      color: rgba(255,255,255,.90);
+    }
+    .track{ position:absolute; inset: 44px 0 0 0; padding: 12px; }
+    .finish{
+      position:absolute;
+      left:0; right:0;
+      top: 10px;
+      height: 3px;
+      background: repeating-linear-gradient(90deg, rgba(255,255,255,.90) 0 12px, rgba(0,0,0,.0) 12px 24px);
+      opacity:.70;
+    }
+    .climber{
+      position:absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 12px;
+      width: 140px;
+      height: 140px;
+      display:grid;
+      place-items:center;
+      transition: bottom 60ms linear;
+      filter: drop-shadow(0 16px 22px rgba(0,0,0,.45));
+      pointer-events:none;
+    }
+    .emoji{ font-size: 70px; line-height: 1; }
+    .trail{
+      width: 52px; height: 16px; margin-top: -6px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 50% 50%, rgba(236,72,153,.75), rgba(99,102,241,.0) 70%);
+      opacity:.92;
+    }
+
+    .overlay{
+      position:absolute; inset:0;
+      display:none; place-items:center;
+      background: radial-gradient(700px 420px at 50% 30%, rgba(255,255,255,.20), rgba(0,0,0,.45));
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+    .overlay.show{ display:grid; }
+    .card{
+      width: min(560px, 86vw);
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.22);
+      background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.10));
+      box-shadow: 0 22px 70px rgba(0,0,0,.38);
+      padding: 16px 16px 14px;
+      position: relative;
+      backdrop-filter: blur(14px);
+    }
+    .winnerHeader{
+      display:none;
+      align-items:center;
+      justify-content:center;
+      gap: 12px;
+      margin: 6px 0 8px;
+    }
+    .winnerIcon{
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      display:grid;
+      place-items:center;
+      border: 1px solid rgba(255,255,255,.22);
+      background: linear-gradient(135deg, rgba(110,231,183,.85), rgba(99,102,241,.85), rgba(236,72,153,.75));
+      box-shadow: 0 16px 40px rgba(0,0,0,.25);
+    }
+    .winnerTitle{
+      font-weight: 950;
+      font-size: 22px;
+      letter-spacing: .2px;
+      color: rgba(255,255,255,.96);
+      text-shadow: 0 10px 30px rgba(0,0,0,.28);
+    }
+    .sub.winnerSub{
+      font-size: 16px;
+      margin-top: 0;
+      color: rgba(255,255,255,.92);
+    }
+    .closeX{
+      position:absolute;
+      top: 10px; right: 10px;
+      width: 42px; height: 42px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.10);
+      color: rgba(255,255,255,.92);
+      cursor:pointer;
+      display:grid; place-items:center;
+      font-weight: 950;
+      font-size: 18px;
+    }
+    .closeX:hover{ filter: brightness(1.08); }
+    .bigNum{
+      font-size: 72px;
+      font-weight: 950;
+      letter-spacing: -.04em;
+      text-align:center;
+      margin: 10px 0;
+      background: linear-gradient(135deg, rgba(110,231,183,1), rgba(99,102,241,1), rgba(236,72,153,1));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .sub{ text-align:center; color: rgba(255,255,255,.84); margin-top: -6px; }
+    .leader{ margin-top: 12px; display:none; grid-template-columns: 1fr; gap:8px; }
+    .leader.show{ display:grid; }
+    .leadRow{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.08);
+    }
+    .leadRow b{ font-weight: 950; }
+    .leadRow small{ font-family: var(--mono); color: rgba(255,255,255,.90); letter-spacing: .08em; }
+
+    @media (max-width: 980px){
+      main{ grid-template-columns: 1fr; }
+      .timerBar{ width: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo"><span>🚀</span></div>
+        <div class="title">
+          <b>Tap-to-Race Game</b>
+         </div>
+      </div>
+
+      <div class="topActions">
+        <div class="chip" id="stateChip">Connecting…</div>
+        <div class="chip" id="playersChip">0 / 0 joined</div>
+        <button class="btn" id="btnClaim">Claim Host</button>
+        <button class="btn primary" id="btnStart" disabled>Start</button>
+        <button class="btn danger" id="btnReset" disabled>Reset</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="panel left">
+        <div class="section">
+          <h3>Players</h3>
+          <div class="row" style="justify-content:space-between">
+            <div class="row" style="gap:10px">
+              <div style="color:var(--muted); font-size:13px">Select count:</div>
+              <div class="seg">
+                <select class="pSelect" id="selPlayers">
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                </select>
+              </div>
+            </div>
+            <div class="chip" id="joinStatus">Waiting…</div>
+          </div>
+
+          <div style="height:10px"></div>
+          <div class="playersList" id="playersList"></div>
+          <div style="height:8px"></div>
+        </div>
+
+        <div class="section">
+          <h3>Round settings</h3>
+          <div class="hint">
+            • Race duration: <b>20 seconds</b><br/>
+            • First to 100% wins<br/>
+            • Tap rate limited for fairness
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Scan to join</h3>
+          <img src="QRCode.png" alt="QR Code" style="width:100%; max-width:220px; display:block; margin:6px auto 0; border-radius:14px; border:1px solid rgba(255,255,255,.16);" />
+        </div>
+      </div>
+
+      <div class="panel race">
+        <div class="raceTop">
+          <div class="chip" id="statusLine">Ready when players join</div>
+          <div class="timerBar" title="Time remaining">
+            <div class="timerFill" id="timerFill"></div>
+          </div>
+        </div>
+
+        <div class="lanes" id="lanes"></div>
+
+        <div class="overlay" id="overlay">
+          <div class="card">
+            <button class="closeX" id="overlayClose">✕</button>
+            <div class="winnerHeader" id="winnerHeader">
+              <div class="winnerIcon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                  <path d="M8 4h8v3a4 4 0 0 1-4 4 4 4 0 0 1-4-4V4Z" stroke="rgba(255,255,255,.95)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M8 7H6a3 3 0 0 0 3 3" stroke="rgba(255,255,255,.95)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M16 7h2a3 3 0 0 1-3 3" stroke="rgba(255,255,255,.95)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M12 11v4" stroke="rgba(255,255,255,.95)" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M9 19h6" stroke="rgba(255,255,255,.95)" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M10 15h4" stroke="rgba(255,255,255,.95)" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <div class="winnerTitle">Winner</div>
+            </div>
+
+            <div class="bigNum" id="overlayBig">3</div>
+            <div class="sub" id="overlaySub">Get ready…</div>
+            <div class="leader" id="leaderboard"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+  const socket = io();
+
+  const btnClaim = document.getElementById("btnClaim");
+  const btnStart = document.getElementById("btnStart");
+  const btnReset = document.getElementById("btnReset");
+  const selPlayers = document.getElementById("selPlayers");
+  const stateChip = document.getElementById("stateChip");
+  const playersChip = document.getElementById("playersChip");
+  const joinStatus = document.getElementById("joinStatus");
+  const playersList = document.getElementById("playersList");
+  const lanesEl = document.getElementById("lanes");
+  const timerFill = document.getElementById("timerFill");
+  const statusLine = document.getElementById("statusLine");
+  const overlay = document.getElementById("overlay");
+  const overlayBig = document.getElementById("overlayBig");
+  const overlaySub = document.getElementById("overlaySub");
+  const leaderboardEl = document.getElementById("leaderboard");
+  const overlayClose = document.getElementById("overlayClose");
+  const winnerHeader = document.getElementById("winnerHeader");
+  const overlayCard = overlay.querySelector(".card");
+
+  let requiredPlayers = 2;
+  let hasHost = false;
+  let roomState = "lobby";
+  let players = [];
+  let timerRAF = null;
+
+  // OBJECTS AND COLORS PRESERVED AS REQUESTED
+  //const emojis = ["🚀","🛸","🎈","🏎️"];
+  const emojis = ["🚀","🚗","🏍️","⛵","🛸","🐎","🏃","🚁"];
+  const laneDots = ["rgba(110,231,183,.95)","rgba(99,102,241,.95)","rgba(236,72,153,.92)","rgba(251,191,36,.92)"];
+
+  let audioCtx = null;
+  let masterGain = null;
+  let tickInterval = null;
+  let audioArmed = false;
+  const risingTrack = new Audio("/rising.mp3");
+  risingTrack.loop = true;
+  risingTrack.volume = 0.35;
+
+  function armAudioOnce() {
+    if (audioArmed) return;
+    audioArmed = true;
+    try { risingTrack.load(); } catch {}
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.22;
+    masterGain.connect(audioCtx.destination);
+  }
+
+  function beep(freq=880, dur=0.12, type="sine") {
+    if (!audioCtx || !masterGain) return;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.value = 0.0001;
+    osc.connect(g); g.connect(masterGain);
+    const t = audioCtx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.6, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+  }
+
+  function whoosh() {
+    if (!audioCtx || !masterGain) return;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const f = audioCtx.createBiquadFilter();
+    osc.type = "sawtooth";
+    f.type = "lowpass";
+    f.frequency.value = 1200;
+    g.gain.value = 0.0001;
+    osc.connect(f); f.connect(g); g.connect(masterGain);
+    const t = audioCtx.currentTime;
+    osc.frequency.setValueAtTime(240, t);
+    osc.frequency.exponentialRampToValueAtTime(900, t + 0.22);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    osc.start(t);
+    osc.stop(t + 0.28);
+  }
+
+  function startTicking() {
+    stopTicking();
+    if (!audioCtx) return;
+    tickInterval = setInterval(() => { beep(1200, 0.03, "square"); }, 450);
+  }
+  function stopTicking() {
+    if (tickInterval) clearInterval(tickInterval);
+    tickInterval = null;
+  }
+  function startRisingTrack() {
+    risingTrack.currentTime = 0;
+    risingTrack.play().catch(()=>{});
+  }
+  function stopRisingTrack() {
+    try { risingTrack.pause(); risingTrack.currentTime = 0; } catch {}
+  }
+
+  const lastMilestone = new Map(); 
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  function setStateChip(text, tone="") {
+    stateChip.textContent = text;
+    stateChip.style.borderColor =
+      tone === "good" ? "rgba(110,231,183,.45)" :
+      tone === "warn" ? "rgba(251,191,36,.45)" :
+      tone === "bad"  ? "rgba(248,113,113,.45)" :
+      "rgba(255,255,255,.16)";
+  }
+
+  function setJoinStatus() {
+    const joined = players.length;
+    joinStatus.textContent = joined >= requiredPlayers ? "Ready" : "Waiting…";
+    joinStatus.style.color = joined >= requiredPlayers ? "rgba(110,231,183,.95)" : "rgba(255,255,255,.92)";
+  }
+
+  function renderPlayersList() {
+    playersList.innerHTML = "";
+    if (!players.length) {
+      playersList.innerHTML = `<div class="hint">No players yet.</div>`;
+      return;
+    }
+    players.forEach((p, idx) => {
+      const el = document.createElement("div");
+      el.className = "pItem";
+      el.innerHTML = `
+        <div class="pLeft">
+          <div class="badge">${idx+1}</div>
+          <div>
+            <div class="pName">${escapeHtml(p.name)} ${p.connected ? "" : `<span style="color:rgba(251,191,36,1); font-weight:900;">(disconnected)</span>`}</div>
+          </div>
+        </div>
+        <div class="pMeta">${Math.round(p.progress)}%</div>
+      `;
+      playersList.appendChild(el);
+    });
+  }
+
+  function getTrackHeightEstimate(){
+    return Math.max(360, window.innerHeight - 260);
+  }
+
+  function renderLanes() {
+    const n = Math.max(requiredPlayers, players.length || requiredPlayers);
+    lanesEl.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+    lanesEl.innerHTML = "";
+
+    for (let i=0; i<n; i++) {
+      const p = players[i] || { name: `Waiting…`, progress: 0, connected: true, id: "none"+i };
+      const pct = Math.round(p.progress || 0);
+      const dotColor = laneDots[i % laneDots.length];
+      const emoji = emojis[i % emojis.length];
+
+      const lane = document.createElement("div");
+      lane.className = "lane";
+      lane.innerHTML = `
+        <div class="laneHeader">
+          <div class="who">
+            <div class="dot" style="background:${dotColor}"></div>
+            <div>${escapeHtml(p.name)}</div>
+          </div>
+          <div class="pct">${pct}%</div>
+        </div>
+        <div class="track">
+          <div class="finish"></div>
+          <div class="climber" style="bottom:${12 + (pct/100)* (getTrackHeightEstimate()-30)}px">
+            <div class="emoji">${emoji}</div>
+            <div class="trail"></div>
+          </div>
+        </div>
+      `;
+      lanesEl.appendChild(lane);
+    }
+  }
+
+  function showOverlay(bigText, subText, showBoard=false, closable=true, mode="message") {
+    overlayBig.textContent = bigText;
+    overlaySub.textContent = subText;
+    leaderboardEl.classList.toggle("show", !!showBoard);
+    overlayClose.style.display = closable ? "grid" : "none";
+    if (mode === "winner") {
+      winnerHeader.style.display = "flex";
+      overlayBig.style.display = "none";         
+      overlaySub.classList.add("winnerSub");     
+      overlayCard.style.width = "min(560px, 86vw)";
+    } else {
+      winnerHeader.style.display = "none";
+      overlayBig.style.display = "block";
+      overlaySub.classList.remove("winnerSub");
+      overlayCard.style.width = "";              
+    }
+    overlay.classList.add("show");
+  }
+  function hideOverlay(){ overlay.classList.remove("show"); }
+
+  overlayClose.addEventListener("click", hideOverlay);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) hideOverlay(); });
+
+  function enableButtons() {
+    btnClaim.disabled = hasHost;
+    btnStart.disabled = !hasHost || !(players.length >= requiredPlayers) || !(roomState === "lobby" || roomState === "ended");
+    btnReset.disabled = !hasHost;
+  }
+
+  function startTimerBar(startedAt, durationMs) {
+    cancelAnimationFrame(timerRAF);
+    function tick(){
+      const now = Date.now();
+      const remain = Math.max(0, durationMs - (now - startedAt));
+      timerFill.style.width = ((remain / durationMs) * 100) + "%";
+      if (remain > 0 && roomState === "running") timerRAF = requestAnimationFrame(tick);
+    }
+    timerRAF = requestAnimationFrame(tick);
+  }
+
+  btnClaim.addEventListener("click", () => { armAudioOnce(); socket.emit("host:claim"); });
+  btnStart.addEventListener("click", () => { armAudioOnce(); socket.emit("host:startGame"); });
+  btnReset.addEventListener("click", () => { armAudioOnce(); socket.emit("host:resetToLobby"); });
+
+  selPlayers.addEventListener("change", () => {
+    const n = Number(selPlayers.value);
+    if (![2,3,4,5,6,7,8].includes(n)) return;
+    requiredPlayers = n;
+    socket.emit("host:setPlayers", { requiredPlayers });
+    renderLanes();
+    setJoinStatus();
+    enableButtons();
+  });
+
+  socket.on("connect", () => setStateChip("Connected", "good"));
+
+  socket.on("host:claimed", () => { hasHost = true; enableButtons(); });
+  socket.on("host:left", () => { hasHost = false; showOverlay("⚠️", "Host left.", false, true); enableButtons(); });
+  socket.on("host:error", ({ message }) => { showOverlay("!", message, false, true); });
+
+  socket.on("game:update", (state) => {
+    requiredPlayers = state.requiredPlayers;
+    roomState = state.state;
+    if (selPlayers && String(selPlayers.value) !== String(requiredPlayers)) selPlayers.value = String(requiredPlayers);
+    players = (state.players || []).slice().sort((a,b) => (b.progress||0) - (a.progress||0));
+    playersChip.textContent = `${state.joinedPlayers} / ${state.requiredPlayers} joined`;
+    setStateChip(roomState, roomState === "running" ? "good" : "");
+    statusLine.textContent = roomState === "running" ? "Running" : "Ready when players join";
+    setJoinStatus();
+    renderPlayersList();
+    renderLanes();
+    enableButtons();
+  });
+
+  socket.on("game:countdown", ({ seconds }) => {
+    roomState = "countdown";
+    let s = seconds;
+    if (audioArmed) beep(880, 0.10, "sine");
+    showOverlay(String(s), "Get ready…", false, false); 
+    const int = setInterval(() => {
+      s--;
+      if (s > 0) {
+        overlayBig.textContent = String(s);
+        if (audioArmed) beep(880, 0.10, "sine");
+      } else {
+        overlayBig.textContent = "GO!";
+        if (audioArmed) { beep(1320, 0.14, "triangle"); beep(1760, 0.10, "sine"); }
+        clearInterval(int);
+        setTimeout(hideOverlay, 550);
+      }
+    }, 1000);
+  });
+
+  socket.on("game:started", ({ startedAt, durationMs }) => {
+    roomState = "running";
+    startTimerBar(startedAt, durationMs);
+    enableButtons();
+    armAudioOnce();
+    startRisingTrack();
+    startTicking();
+    lastMilestone.clear();
+  });
+
+  socket.on("game:progress", ({ id, progress }) => {
+    const idx = players.findIndex(p => p.id === id);
+    if (idx >= 0) {
+      const prev = players[idx].progress || 0;
+      players[idx].progress = progress;
+      const mPrev = Math.floor(prev / 10);
+      const mNow  = Math.floor(progress / 10);
+      const last = lastMilestone.get(id) ?? mPrev;
+      if (mNow > last && mNow <= 10) {
+        lastMilestone.set(id, mNow);
+        if (audioArmed && roomState === "running") whoosh();
+      }
+      players.sort((a,b) => (b.progress||0) - (a.progress||0));
+      renderPlayersList();
+      renderLanes();
+    }
+  });
+
+  socket.on("game:ended", ({ winner, leaderboard }) => {
+    roomState = "ended";
+    timerFill.style.width = "0%";
+    stopTicking();
+    stopRisingTrack();
+    const list = (leaderboard || []).slice().sort((a,b) => (b.progress||0)-(a.progress||0));
+    leaderboardEl.innerHTML = "";
+    list.forEach((p, i) => {
+      const row = document.createElement("div");
+      row.className = "leadRow";
+      row.innerHTML = `<b>${i+1}. ${escapeHtml(p.name)}</b><small>${Math.round(p.progress)}%</small>`;
+      leaderboardEl.appendChild(row);
+    });
+    showOverlay("", winner ? `Winner: ${winner.name}` : "Round ended", true, true, "winner");
+    enableButtons();
+  });
+
+  socket.on("game:reset", () => {
+    roomState = "lobby";
+    hideOverlay();
+    timerFill.style.width = "0%";
+    stopTicking();
+    stopRisingTrack();
+    enableButtons();
+  });
+
+  renderPlayersList();
+  renderLanes();
+  enableButtons();
+</script>
+</body>
+</html>
